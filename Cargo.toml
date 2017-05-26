@@ -1,0 +1,8 @@
+[package]
+name = "slackbot-rs"
+version = "0.1.0"
+authors = ["Torsten Scholz <doaschdn@googlemail.com>"]
+
+[dependencies]
+slack = "0.18.0"
+dotenv = "0.10.0"
