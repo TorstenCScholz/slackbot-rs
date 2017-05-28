@@ -6,3 +6,5 @@ authors = ["Torsten Scholz <doaschdn@googlemail.com>"]
 [dependencies]
 slack = "0.18.0"
 dotenv = "0.10.0"
+diesel = { version = "0.13.0", features = ["sqlite"] }
+diesel_codegen = { version = "0.13.0", features = ["sqlite"] }
