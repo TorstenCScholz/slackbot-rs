@@ -82,20 +82,16 @@ impl slack::EventHandler for BasicHandler {
         // TODO: 4 Execute command call with specific context
 
         // TODO: 1 (ugly)
-        let mut input = None;
-        let mut channel_id = None;
-
-        match event {
+        let (input, channel_id) = match event {
             Event::Message(message) => {
                 match *message {
                     Message::Standard(standard_message) => {
-                        input = standard_message.text;
-                        channel_id = standard_message.channel;
+                        (standard_message.text, standard_message.channel)
                     },
-                    _ => ()
+                    _ => (None, None)
                 }
             },
-            _ => ()
+            _ => (None, None)
         };
 
         if let Some(input) = input {
