@@ -32,15 +32,44 @@ fn get_channel_id<'a>(cli: &'a RtmClient, channel_name: &str) -> Option<&'a Chan
         })
 }
 
-fn get_command_from_input(input: &str) -> Option<String> {
-    if input.starts_with(COMMAND_TOKEN) {
+fn get_command_line(whole_input: &str) -> Option<String> {
+    if whole_input.starts_with(COMMAND_TOKEN) {
         let token_len = COMMAND_TOKEN.len();
-        let command_part = &input[token_len..];
+        return Some(whole_input[token_len..].to_owned())
+    }
 
-        Some(command_part.to_owned())
+    None
+}
+
+fn get_command(whole_input_sans_command_token: &str) -> Option<String> {
+    let parts: Vec<_> = whole_input_sans_command_token.split_whitespace().collect();
+
+    if parts.len() > 0 {
+        return Some(parts[0].to_owned())
     } else {
         None
     }
+}
+
+fn get_command_parameters(whole_input_sans_command_token: &str) -> Vec<String> {
+    let parts: Vec<_> = whole_input_sans_command_token.split_whitespace().collect();
+
+    if get_command(whole_input_sans_command_token).is_some() {
+        return parts[1..].iter().cloned().map(String::from).collect()
+    } else {
+        Vec::new()
+    }
+}
+
+fn get_command_from_input(whole_input: &str) -> Option<String> {
+    if whole_input.starts_with(COMMAND_TOKEN) {
+        let token_len = COMMAND_TOKEN.len();
+        let command_part = &whole_input[token_len..];
+
+        return get_command(command_part)
+    }
+
+    None
 }
 
 impl slack::EventHandler for BasicHandler {
@@ -53,23 +82,51 @@ impl slack::EventHandler for BasicHandler {
         // TODO: 4 Execute command call with specific context
 
         // TODO: 1 (ugly)
-        let input = match event {
+        let mut input = None;
+        let mut channel_id = None;
+
+        match event {
             Event::Message(message) => {
                 match *message {
-                    Message::Standard(standard_message) => standard_message.text,
-                    _ => None
+                    Message::Standard(standard_message) => {
+                        input = standard_message.text;
+                        channel_id = standard_message.channel;
+                    },
+                    _ => ()
                 }
             },
-            _ => None
+            _ => ()
         };
 
         if let Some(input) = input {
             let command = get_command_from_input(&input);
 
+            // TODO: Better splitting of command token, command and parameters
             // TODO: 2
             if let Some(command) = command {
                 // TODO: We have the command, lookup implemented function for it
                 println!("Got command: {}", command);
+                let command_line = get_command_line(&input);
+                let command_parameters = get_command_parameters(&command_line.unwrap_or(String::from("")));
+
+                match command.as_ref() {
+                    "start" => {
+                        let message_formatted = format!("Got command '{}' with params {:?}", command, command_parameters);
+                        let message = message_formatted.as_str();
+                        println!("{}", message);
+                        if let Some(channel_id) = channel_id {
+                            let _ = cli.sender().send_message(channel_id.as_str(), message);
+                        }
+                    },
+                    _ => {
+                        let message_formatted = format!("Unknown command '{}' with params {:?}", command, command_parameters);
+                        let message = message_formatted.as_str();
+                        println!("{}", message);
+                        if let Some(channel_id) = channel_id {
+                            let _ = cli.sender().send_message(channel_id.as_str(), message);
+                        }
+                    }
+                }
             }
         }
     }
