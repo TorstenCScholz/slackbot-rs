@@ -4,7 +4,10 @@ use schema::{polls, items, proposals, votes, voters};
 #[has_many(proposals)]
 pub struct Poll {
     pub id: i32,
-    pub name: String
+    pub name: String,
+    pub status: String,
+    pub started_at: String,
+    pub concluded_at: String
 }
 
 #[derive(Identifiable, Queryable, Associations)]
@@ -30,7 +33,8 @@ pub struct Proposal {
 pub struct Vote {
     pub id: i32,
     pub voter_id: i32,
-    pub proposal_id: i32
+    pub proposal_id: i32,
+    pub weight: i32
 }
 
 #[derive(Identifiable, Queryable, Associations)]
