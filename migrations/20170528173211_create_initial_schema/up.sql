@@ -1,31 +1,35 @@
 CREATE TABLE polls (
-	id integer PRIMARY KEY AUTOINCREMENT,
-	name varchar
+	id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+	name VARCHAR UNIQUE NOT NULL,
+  status VARCHAR NOT NULL,
+  started_at VARCHAR,
+  concluded_at VARCHAR
 );
 
 CREATE TABLE items (
-	id integer PRIMARY KEY AUTOINCREMENT,
-	name varchar
+	id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+	name VARCHAR UNIQUE NOT NULL
 );
 
 CREATE TABLE proposals (
-	id integer PRIMARY KEY AUTOINCREMENT,
-  poll_id integer,
-  item_id integer,
+	id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  poll_id INTEGER NOT NULL,
+  item_id INTEGER NOT NULL,
 	FOREIGN KEY(poll_id) REFERENCES poll(id),
 	FOREIGN KEY(item_id) REFERENCES item(id)
 );
 
 CREATE TABLE votes (
-	id integer PRIMARY KEY AUTOINCREMENT,
-  voter_id integer,
-  proposal_id integer,
+	id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  voter_id INTEGER NOT NULL,
+  proposal_id INTEGER NOT NULL,
+  weight INTEGER NOT NULL,
 	FOREIGN KEY(voter_id) REFERENCES voter(id),
 	FOREIGN KEY(proposal_id) REFERENCES proposal(id)
 );
 
 CREATE TABLE voters (
-	id integer PRIMARY KEY AUTOINCREMENT,
-	name varchar,
-  slack_id varchar
+	id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+	name VARCHAR UNIQUE NOT NULL,
+  slack_id VARCHAR
 );

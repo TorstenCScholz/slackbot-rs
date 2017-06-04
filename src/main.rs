@@ -8,15 +8,19 @@ pub mod schema;
 pub mod models;
 
 use diesel::prelude::*;
+use diesel::sqlite::SqliteConnection;
 
 use slack::{Channel, Event, Message, RtmClient};
 use dotenv::dotenv;
 
 use std::env;
 
+use self::models::*;
+
 struct BasicHandler;
 
-const COMMAND_TOKEN: &'static str = "-&gt; ";
+// TODO: Should come from config
+const COMMAND_TOKEN: &'static str = "*";
 
 fn get_channel_id<'a>(cli: &'a RtmClient, channel_name: &str) -> Option<&'a Channel> {
     cli.start_response()
@@ -106,8 +110,48 @@ impl slack::EventHandler for BasicHandler {
                 let command_parameters = get_command_parameters(&command_line.unwrap_or(String::from("")));
 
                 match command.as_ref() {
-                    "start" => {
-                        let message_formatted = format!("Got command '{}' with params {:?}", command, command_parameters);
+                    "new_poll" => {
+                        let message_formatted = format!("Creating a new poll ({:?})", command_parameters);
+                        let message = message_formatted.as_str();
+                        println!("{}", message);
+                        if let Some(channel_id) = channel_id {
+                            let _ = cli.sender().send_message(channel_id.as_str(), message);
+                        }
+                    },
+                    "start_poll" => {
+                        let message_formatted = format!("Starting poll ({:?})", command_parameters);
+                        let message = message_formatted.as_str();
+                        println!("{}", message);
+                        if let Some(channel_id) = channel_id {
+                            let _ = cli.sender().send_message(channel_id.as_str(), message);
+                        }
+                    },
+                    "new_user" => {
+                        let message_formatted = format!("Creating new user ({:?})", command_parameters);
+                        let message = message_formatted.as_str();
+                        println!("{}", message);
+                        if let Some(channel_id) = channel_id {
+                            let _ = cli.sender().send_message(channel_id.as_str(), message);
+                        }
+                    },
+                    "new_item" => {
+                        let message_formatted = format!("Creating new item ({:?})", command_parameters);
+                        let message = message_formatted.as_str();
+                        println!("{}", message);
+                        if let Some(channel_id) = channel_id {
+                            let _ = cli.sender().send_message(channel_id.as_str(), message);
+                        }
+                    },
+                    "new_proposal" => {
+                        let message_formatted = format!("Creating new proposal ({:?})", command_parameters);
+                        let message = message_formatted.as_str();
+                        println!("{}", message);
+                        if let Some(channel_id) = channel_id {
+                            let _ = cli.sender().send_message(channel_id.as_str(), message);
+                        }
+                    },
+                    "vote" => {
+                        let message_formatted = format!("Registering vote ({:?})", command_parameters);
                         let message = message_formatted.as_str();
                         println!("{}", message);
                         if let Some(channel_id) = channel_id {
@@ -115,7 +159,7 @@ impl slack::EventHandler for BasicHandler {
                         }
                     },
                     _ => {
-                        let message_formatted = format!("Unknown command '{}' with params {:?}", command, command_parameters);
+                        let message_formatted = format!("Unknown command '{}' ({:?})", command, command_parameters);
                         let message = message_formatted.as_str();
                         println!("{}", message);
                         if let Some(channel_id) = channel_id {
@@ -143,6 +187,27 @@ impl slack::EventHandler for BasicHandler {
     }
 }
 
+pub fn establish_connection() -> SqliteConnection {
+    let database_url = env::var("DATABASE_URL")
+        .expect("DATABASE_URL must be set");
+    SqliteConnection::establish(&database_url)
+        .expect(&format!("Error connecting to {}", database_url))
+}
+
+pub fn create_poll<'a>(db_conn: &SqliteConnection, name: &'a str, status: PollStatus) -> usize {
+    use schema::polls;
+
+    let new_poll = NewPoll {
+        name: name,
+        status: status.as_str(),
+    };
+
+    diesel::insert(&new_poll)
+        .into(polls::table)
+        .execute(db_conn)
+        .expect("Error saving new post")
+}
+
 fn main() {
     dotenv().ok();
 
@@ -155,5 +220,22 @@ fn main() {
         Err(err) => panic!("Error: {}", err),
     }
 
-    // TODO: Test if database with diesel works as planned
+    use self::schema::polls::dsl::*;
+    use self::models::Poll;
+
+    let connection = establish_connection();
+
+    // let _ = create_poll(&connection, "2017-06-04.2", "IN_PROGRESS");
+
+    // let results = polls.filter(status.eq(PollStatus::InProgress.as_str()))
+    //     .limit(5)
+    //     .load::<Poll>(&connection)
+    //     .expect("Error loading polls");
+    //
+    // println!("Displaying {} polls", results.len());
+    // for poll in results {
+    //     println!("{}", poll.name);
+    //     println!("{}", poll.status);
+    //     println!("{}", poll.started_at.unwrap_or("None".to_owned()));
+    // }
 }

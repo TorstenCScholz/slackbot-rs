@@ -1,13 +1,48 @@
 use schema::{polls, items, proposals, votes, voters};
 
+pub enum PollStatus {
+    Aborted, // Not in use
+    Concluded,
+    InProgress,
+    Stopped // Not in use
+}
+
+impl PollStatus {
+    pub fn from_str(s: &str) -> Option<PollStatus> {
+        match s {
+            "ABORTED" => Some(PollStatus::Aborted),
+            "CONCLUDED" => Some(PollStatus::Concluded),
+            "IN_PROGRESS" => Some(PollStatus::InProgress),
+            "STOPPED" => Some(PollStatus::Stopped),
+            _ => None
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            &PollStatus::Aborted => "ABORTED",
+            &PollStatus::Concluded => "CONCLUDED",
+            &PollStatus::InProgress => "IN_PROGRESS",
+            &PollStatus::Stopped => "STOPPED",
+        }
+    }
+}
+
 #[derive(Identifiable, Queryable, Associations)]
 #[has_many(proposals)]
 pub struct Poll {
     pub id: i32,
     pub name: String,
     pub status: String,
-    pub started_at: String,
-    pub concluded_at: String
+    pub started_at: Option<String>,
+    pub concluded_at: Option<String>
+}
+
+#[derive(Insertable)]
+#[table_name="polls"]
+pub struct NewPoll<'a> {
+    pub name: &'a str,
+    pub status: &'a str,
 }
 
 #[derive(Identifiable, Queryable, Associations)]
@@ -42,5 +77,5 @@ pub struct Vote {
 pub struct Voter {
     pub id: i32,
     pub name: String,
-    pub slack_id: String
+    pub slack_id: Option<String>
 }
