@@ -9,6 +9,7 @@ pub mod models;
 
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
+use diesel::result::{Error, DatabaseErrorKind};
 
 use slack::{Channel, Event, Message, RtmClient};
 use dotenv::dotenv;
@@ -17,10 +18,12 @@ use std::env;
 
 use self::models::*;
 
-struct BasicHandler;
-
 // TODO: Should come from config
 const COMMAND_TOKEN: &'static str = "*";
+
+struct BasicHandler {
+    pub db_conn: SqliteConnection
+}
 
 fn get_channel_id<'a>(cli: &'a RtmClient, channel_name: &str) -> Option<&'a Channel> {
     cli.start_response()
@@ -111,11 +114,35 @@ impl slack::EventHandler for BasicHandler {
 
                 match command.as_ref() {
                     "new_poll" => {
-                        let message_formatted = format!("Creating a new poll ({:?})", command_parameters);
-                        let message = message_formatted.as_str();
-                        println!("{}", message);
-                        if let Some(channel_id) = channel_id {
-                            let _ = cli.sender().send_message(channel_id.as_str(), message);
+                        if command_parameters.len() > 0 {
+                            let poll_name = command_parameters[0].as_str();
+                            let mut message_formatted = format!("Creating a new poll '{}'", poll_name);
+
+                            if let Some(channel_id) = channel_id {
+                                let result = create_poll(&self.db_conn, poll_name, PollStatus::InProgress);
+
+                                match result {
+                                    Err(Error::DatabaseError(error_type, error_message)) => {
+                                        match error_type {
+                                            DatabaseErrorKind::UniqueViolation => message_formatted = format!("Poll name already taken!"),
+                                            _ => ()
+                                        }
+                                    },
+                                    Err(_) => (),
+                                    Ok(_) => ()
+                                }
+
+                                let message = message_formatted.as_str();
+                                println!("{}", message);
+
+                                let _ = cli.sender().send_message(channel_id.as_str(), message);
+                            }
+                        } else {
+                            let message = "Please specify the unique name of the poll";
+                            println!("{}", message);
+                            if let Some(channel_id) = channel_id {
+                                let _ = cli.sender().send_message(channel_id.as_str(), message);
+                            }
                         }
                     },
                     "start_poll" => {
@@ -194,7 +221,7 @@ pub fn establish_connection() -> SqliteConnection {
         .expect(&format!("Error connecting to {}", database_url))
 }
 
-pub fn create_poll<'a>(db_conn: &SqliteConnection, name: &'a str, status: PollStatus) -> usize {
+pub fn create_poll<'a>(db_conn: &SqliteConnection, name: &'a str, status: PollStatus) -> Result<usize, diesel::result::Error> {
     use schema::polls;
 
     let new_poll = NewPoll {
@@ -205,14 +232,17 @@ pub fn create_poll<'a>(db_conn: &SqliteConnection, name: &'a str, status: PollSt
     diesel::insert(&new_poll)
         .into(polls::table)
         .execute(db_conn)
-        .expect("Error saving new post")
 }
 
 fn main() {
     dotenv().ok();
 
+    let db_conn = establish_connection();
+
     let api_key = env::var("SLACK_API_TOKEN").expect("SLACK_API_TOKEN not set.");
-    let mut handler = BasicHandler;
+    let mut handler = BasicHandler {
+        db_conn: db_conn
+    };
     let r = RtmClient::login_and_run(&api_key, &mut handler);
 
     match r {
@@ -220,12 +250,6 @@ fn main() {
         Err(err) => panic!("Error: {}", err),
     }
 
-    use self::schema::polls::dsl::*;
-    use self::models::Poll;
-
-    let connection = establish_connection();
-
-    // let _ = create_poll(&connection, "2017-06-04.2", "IN_PROGRESS");
 
     // let results = polls.filter(status.eq(PollStatus::InProgress.as_str()))
     //     .limit(5)
