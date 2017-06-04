@@ -185,6 +185,37 @@ impl slack::EventHandler for BasicHandler {
                             let _ = cli.sender().send_message(channel_id.as_str(), message);
                         }
                     },
+                    "list_polls" => {
+                        let message_formatted = format!("Listing all registered polls");
+                        let message = message_formatted.as_str();
+                        println!("{}", message);
+                        if let Some(channel_id) = channel_id {
+                            let _ = cli.sender().send_message(channel_id.as_str(), message);
+                        }
+                    },
+                    "help" => {
+                            let message_formatted = format!("Displaying help");
+                            let message = message_formatted.as_str();
+                            println!("{}", message);
+                            if let Some(channel_id) = channel_id {
+                                let _ = cli.sender().send_message(channel_id.as_str(), message);
+                            }
+                    },
+                    "conclude_poll" => {
+                        let message_formatted = format!("Concluding poll ({:?})", command_parameters);
+                        let message = message_formatted.as_str();
+                        println!("{}", message);
+                        if let Some(channel_id) = channel_id {
+                            let _ = cli.sender().send_message(channel_id.as_str(), message);
+                    },
+                    "show_poll_results" => {
+                        let message_formatted = format!("Displaying current poll results ({:?})", command_parameters);
+                        let message = message_formatted.as_str();
+                        println!("{}", message);
+                        if let Some(channel_id) = channel_id {
+                            let _ = cli.sender().send_message(channel_id.as_str(), message);
+                        }
+                    },
                     _ => {
                         let message_formatted = format!("Unknown command '{}' ({:?})", command, command_parameters);
                         let message = message_formatted.as_str();
