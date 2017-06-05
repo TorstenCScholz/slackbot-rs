@@ -288,42 +288,59 @@ fn main() {
             return false;
         }
 
-        if args.len() > 0 {
-            let poll_name = args[0];
-            let mut message_formatted = format!("Creating a new poll '{}'", poll_name);
+        let poll_name = args[0];
+        let mut message_formatted = format!("Creating a new poll '{}'", poll_name);
 
-            if let Some(channel_id) = context.channel.as_ref() {
-                let result = create_poll(&context.db_conn, poll_name, PollStatus::InProgress);
+        if let Some(channel_id) = context.channel.as_ref() {
+            let result = create_poll(&context.db_conn, poll_name, PollStatus::InProgress);
 
-                match result {
-                    Err(Error::DatabaseError(error_type, error_message)) => {
-                        match error_type {
-                            DatabaseErrorKind::UniqueViolation => message_formatted = format!("Poll name already taken!"),
-                            _ => ()
-                        }
-                    },
-                    Err(_) => (),
-                    Ok(_) => ()
-                }
-
-                let message = message_formatted.as_str();
-                println!("{}", message);
-
-                let _ = context.cli.sender().send_message(channel_id.as_str(), message);
+            match result {
+                Err(Error::DatabaseError(error_type, error_message)) => {
+                    match error_type {
+                        DatabaseErrorKind::UniqueViolation => message_formatted = format!("Poll name already taken!"),
+                        _ => ()
+                    }
+                },
+                Err(_) => (),
+                Ok(_) => ()
             }
-        } else {
-            let message = "Please specify the unique name of the poll";
+
+            let message = message_formatted.as_str();
             println!("{}", message);
-            if let Some(channel_id) = context.channel.as_ref() {
-                let _ = context.cli.sender().send_message(channel_id.as_str(), message);
-            }
+
+            let _ = context.cli.sender().send_message(channel_id.as_str(), message);
         }
 
-        return true;
+        true
+    };
+
+    let list_polls = |context: &mut Context, args: Vec<&str>| -> bool {
+        use self::schema::polls::dsl::*;
+
+        if let Some(channel_id) = context.channel.as_ref() {
+            let results = polls
+                .order(id.desc())
+                .limit(5)
+                .load::<Poll>(context.db_conn)
+                .expect("Error loading polls");
+
+            println!("Displaying {} polls", results.len());
+
+            let mut message = format!("Displaying latest polls:\n");
+
+            for (num, poll) in results.iter().enumerate() {
+                message = format!("{}{}. {}\n", message, (num + 1), poll.name);
+            }
+
+            let _ = context.cli.sender().send_message(channel_id.as_str(), message.as_str());
+        }
+
+        true
     };
 
     let mut commands: HashSet<Command> = HashSet::new();
     commands.insert(Command::new("new_poll", Box::new(new_poll)));
+    commands.insert(Command::new("list_polls", Box::new(list_polls)));
 
     let db_conn = establish_connection();
 
