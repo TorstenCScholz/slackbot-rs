@@ -139,19 +139,6 @@ impl <'a> slack::EventHandler for BasicHandler<'a> {
                     let _ = cli.sender().send_message(channel_id.as_ref().unwrap().as_str(), format!("Command '{}' not found.", command).as_str());
                 }
 
-                // for command_obj in &self.commands {
-                //     if command_obj.matches(command.as_str()) {
-                //         successful_invoked = true;
-                //
-                //         let mut context = Context::new(&self.db_conn, cli, &channel_id);
-                //         let enough_params = command_obj.invoke(&mut context, command_parameters.iter().map(String::as_str).collect());
-                //
-                //         if !enough_params {
-                //             let _ = cli.sender().send_message(channel_id.as_ref().unwrap().as_str(), format!("Not enough parameters for command '{}'.", command).as_str());
-                //         }
-                //     }
-                // }
-
                 // match command.as_ref() {
                     // "new_user" => {
                     //     let message_formatted = format!("Creating new user ({:?})", command_parameters);
@@ -179,14 +166,6 @@ impl <'a> slack::EventHandler for BasicHandler<'a> {
                     // },
                     // "vote" => {
                     //     let message_formatted = format!("Registering vote ({:?})", command_parameters);
-                    //     let message = message_formatted.as_str();
-                    //     println!("{}", message);
-                    //     if let Some(channel_id) = channel_id {
-                    //         let _ = cli.sender().send_message(channel_id.as_str(), message);
-                    //     }
-                    // },
-                    // "conclude_poll" => {
-                    //     let message_formatted = format!("Concluding poll ({:?})", command_parameters);
                     //     let message = message_formatted.as_str();
                     //     println!("{}", message);
                     //     if let Some(channel_id) = channel_id {
@@ -262,6 +241,26 @@ pub fn start_poll(db_conn: &SqliteConnection, poll_name: &str) -> Result<usize, 
         .execute(db_conn)
 }
 
+pub fn can_conclude_poll(db_conn: &SqliteConnection, poll_name: &str) -> bool {
+    use self::schema::polls::dsl::*;
+
+    let results = polls
+        .filter(name.eq(poll_name))
+        .limit(1)
+        .load::<Poll>(db_conn)
+        .expect("Cannot load polls from DB.");
+
+    ((results.len() == 1) && (results[0].status.as_str() != PollStatus::Concluded.as_str()))
+}
+
+pub fn conclude_poll(db_conn: &SqliteConnection, poll_name: &str) -> Result<usize, diesel::result::Error> {
+    use self::schema::polls::dsl::*;
+
+    diesel::update(polls.filter(name.eq(poll_name)))
+        .set(status.eq(PollStatus::Concluded.as_str()))
+        .execute(db_conn)
+}
+
 fn main() {
     dotenv().ok();
 
@@ -325,6 +324,35 @@ fn main() {
         true
     };
 
+    let conclude_poll = |context: &mut Context, args: Vec<&str>| -> bool {
+        if args.len() < 1 {
+            return false;
+        }
+
+        let poll_name = args[0];
+        let mut message_formatted = format!("Concluded poll '{}'.", poll_name);
+
+        if let Some(channel_id) = context.channel.as_ref() {
+            if can_conclude_poll(&context.db_conn, poll_name) {
+                let result = conclude_poll(&context.db_conn, poll_name);
+
+                match result {
+                    Err(error) => message_formatted = format!("Cannot conclude poll: {:?}", error),
+                    Ok(_) => ()
+                }
+
+                let message = message_formatted.as_str();
+                println!("{}", message);
+
+                let _ = context.cli.sender().send_message(channel_id.as_str(), message);
+            } else {
+                let _ = context.cli.sender().send_message(channel_id.as_str(), "Cannot conclude a poll that has already been concluded.");
+            }
+        }
+
+        true
+    };
+
     let list_polls = |context: &mut Context, args: Vec<&str>| -> bool {
         use self::schema::polls::dsl::*;
 
@@ -360,6 +388,7 @@ fn main() {
     let mut commands: HashSet<Command> = HashSet::new();
     commands.insert(Command::new("new_poll", Box::new(new_poll)));
     commands.insert(Command::new("start_poll", Box::new(start_poll)));
+    commands.insert(Command::new("conclude_poll", Box::new(conclude_poll)));
     commands.insert(Command::new("list_polls", Box::new(list_polls)));
     commands.insert(Command::new("help", Box::new(help)));
 
