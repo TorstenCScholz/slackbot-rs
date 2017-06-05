@@ -121,7 +121,6 @@ impl <'a> slack::EventHandler for BasicHandler<'a> {
             // TODO: Better splitting of command token, command and parameters
             // TODO: 2
             if let Some(command) = command {
-                // TODO: We have the command, lookup implemented function for it
                 println!("Got command: {}", command);
                 let command_line = get_command_line(&input);
                 let command_parameters = get_command_parameters(&command_line.unwrap_or(String::from("")));
@@ -138,57 +137,6 @@ impl <'a> slack::EventHandler for BasicHandler<'a> {
                 } else {
                     let _ = cli.sender().send_message(channel_id.as_ref().unwrap().as_str(), format!("Command '{}' not found.", command).as_str());
                 }
-
-                // match command.as_ref() {
-                    // "new_user" => {
-                    //     let message_formatted = format!("Creating new user ({:?})", command_parameters);
-                    //     let message = message_formatted.as_str();
-                    //     println!("{}", message);
-                    //     if let Some(channel_id) = channel_id {
-                    //         let _ = cli.sender().send_message(channel_id.as_str(), message);
-                    //     }
-                    // },
-                    // "new_item" => {
-                    //     let message_formatted = format!("Creating new item ({:?})", command_parameters);
-                    //     let message = message_formatted.as_str();
-                    //     println!("{}", message);
-                    //     if let Some(channel_id) = channel_id {
-                    //         let _ = cli.sender().send_message(channel_id.as_str(), message);
-                    //     }
-                    // },
-                    // "new_proposal" => {
-                    //     let message_formatted = format!("Creating new proposal ({:?})", command_parameters);
-                    //     let message = message_formatted.as_str();
-                    //     println!("{}", message);
-                    //     if let Some(channel_id) = channel_id {
-                    //         let _ = cli.sender().send_message(channel_id.as_str(), message);
-                    //     }
-                    // },
-                    // "vote" => {
-                    //     let message_formatted = format!("Registering vote ({:?})", command_parameters);
-                    //     let message = message_formatted.as_str();
-                    //     println!("{}", message);
-                    //     if let Some(channel_id) = channel_id {
-                    //         let _ = cli.sender().send_message(channel_id.as_str(), message);
-                    //     }
-                    // },
-                    // "show_poll_results" => {
-                    //     let message_formatted = format!("Displaying current poll results ({:?})", command_parameters);
-                    //     let message = message_formatted.as_str();
-                    //     println!("{}", message);
-                    //     if let Some(channel_id) = channel_id {
-                    //         let _ = cli.sender().send_message(channel_id.as_str(), message);
-                    //     }
-                    // },
-                //     _ => {
-                //         // let message_formatted = format!("Unknown command '{}' ({:?})", command, command_parameters);
-                //         // let message = message_formatted.as_str();
-                //         // println!("{}", message);
-                //         // if let Some(channel_id) = channel_id {
-                //         //     let _ = cli.sender().send_message(channel_id.as_str(), message);
-                //         // }
-                //     }
-                // }
             }
         }
     }
@@ -304,6 +252,8 @@ fn main() {
         let mut message_formatted = format!("Started poll '{}'.", poll_name);
 
         if let Some(channel_id) = context.channel.as_ref() {
+            // TODO: Check if poll exists
+
             if can_start_poll(&context.db_conn, poll_name) {
                 let result = start_poll(&context.db_conn, poll_name);
 
@@ -333,6 +283,8 @@ fn main() {
         let mut message_formatted = format!("Concluded poll '{}'.", poll_name);
 
         if let Some(channel_id) = context.channel.as_ref() {
+            // TODO: Check if poll exists
+
             if can_conclude_poll(&context.db_conn, poll_name) {
                 let result = conclude_poll(&context.db_conn, poll_name);
 
@@ -385,6 +337,13 @@ fn main() {
         true
     };
 
+    // TODO: Implemented the following commands:
+    // * new_user
+    // * new_item
+    // * new_proposal
+    // * vote
+    // * show_poll_results
+
     let mut commands: HashSet<Command> = HashSet::new();
     commands.insert(Command::new("new_poll", Box::new(new_poll)));
     commands.insert(Command::new("start_poll", Box::new(start_poll)));
@@ -405,7 +364,6 @@ fn main() {
         Ok(_) => {}
         Err(err) => panic!("Error: {}", err),
     }
-
 
     // let results = polls.filter(status.eq(PollStatus::InProgress.as_str()))
     //     .limit(5)
