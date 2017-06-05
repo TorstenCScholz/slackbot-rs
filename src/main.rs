@@ -1,9 +1,9 @@
 #[macro_use] extern crate diesel;
 #[macro_use] extern crate diesel_codegen;
-
 extern crate slack;
 extern crate dotenv;
 
+pub mod command;
 pub mod schema;
 pub mod models;
 
@@ -12,17 +12,21 @@ use diesel::sqlite::SqliteConnection;
 use diesel::result::{Error, DatabaseErrorKind};
 
 use slack::{Channel, Event, Message, RtmClient};
+
 use dotenv::dotenv;
 
 use std::env;
+use std::collections::{HashSet};
 
+use self::command::{Command, Context};
 use self::models::*;
 
 // TODO: Should come from config
 const COMMAND_TOKEN: &'static str = "*";
 
-struct BasicHandler {
-    pub db_conn: SqliteConnection
+struct BasicHandler<'a> {
+    pub db_conn: SqliteConnection,
+    pub commands: HashSet<Command<'a>>
 }
 
 fn get_channel_id<'a>(cli: &'a RtmClient, channel_name: &str) -> Option<&'a Channel> {
@@ -79,7 +83,17 @@ fn get_command_from_input(whole_input: &str) -> Option<String> {
     None
 }
 
-impl slack::EventHandler for BasicHandler {
+fn get_command_implementation<'a>(command_name: &str, command_implementations: &'a HashSet<Command<'a>>) -> Option<&'a Command<'a>> {
+    for command_implementation in command_implementations {
+        if command_implementation.matches(command_name) {
+            return Some(command_implementation);
+        }
+    }
+
+    None
+}
+
+impl <'a> slack::EventHandler for BasicHandler<'a> {
     fn on_event(&mut self, cli: &RtmClient, event: Event) {
         println!("on_event(event: {:?})", event);
 
@@ -112,119 +126,126 @@ impl slack::EventHandler for BasicHandler {
                 let command_line = get_command_line(&input);
                 let command_parameters = get_command_parameters(&command_line.unwrap_or(String::from("")));
 
-                match command.as_ref() {
-                    "new_poll" => {
-                        if command_parameters.len() > 0 {
-                            let poll_name = command_parameters[0].as_str();
-                            let mut message_formatted = format!("Creating a new poll '{}'", poll_name);
+                let command_implementation_option = get_command_implementation(command.as_str(), &self.commands);
 
-                            if let Some(channel_id) = channel_id {
-                                let result = create_poll(&self.db_conn, poll_name, PollStatus::InProgress);
+                if let Some(command_implementation) = command_implementation_option {
+                    let mut context = Context::new(&self.db_conn, cli, &channel_id);
+                    let enough_params = command_implementation.invoke(&mut context, command_parameters.iter().map(String::as_str).collect());
 
-                                match result {
-                                    Err(Error::DatabaseError(error_type, error_message)) => {
-                                        match error_type {
-                                            DatabaseErrorKind::UniqueViolation => message_formatted = format!("Poll name already taken!"),
-                                            _ => ()
-                                        }
-                                    },
-                                    Err(_) => (),
-                                    Ok(_) => ()
-                                }
-
-                                let message = message_formatted.as_str();
-                                println!("{}", message);
-
-                                let _ = cli.sender().send_message(channel_id.as_str(), message);
-                            }
-                        } else {
-                            let message = "Please specify the unique name of the poll";
-                            println!("{}", message);
-                            if let Some(channel_id) = channel_id {
-                                let _ = cli.sender().send_message(channel_id.as_str(), message);
-                            }
-                        }
-                    },
-                    "start_poll" => {
-                        let message_formatted = format!("Starting poll ({:?})", command_parameters);
-                        let message = message_formatted.as_str();
-                        println!("{}", message);
-                        if let Some(channel_id) = channel_id {
-                            let _ = cli.sender().send_message(channel_id.as_str(), message);
-                        }
-                    },
-                    "new_user" => {
-                        let message_formatted = format!("Creating new user ({:?})", command_parameters);
-                        let message = message_formatted.as_str();
-                        println!("{}", message);
-                        if let Some(channel_id) = channel_id {
-                            let _ = cli.sender().send_message(channel_id.as_str(), message);
-                        }
-                    },
-                    "new_item" => {
-                        let message_formatted = format!("Creating new item ({:?})", command_parameters);
-                        let message = message_formatted.as_str();
-                        println!("{}", message);
-                        if let Some(channel_id) = channel_id {
-                            let _ = cli.sender().send_message(channel_id.as_str(), message);
-                        }
-                    },
-                    "new_proposal" => {
-                        let message_formatted = format!("Creating new proposal ({:?})", command_parameters);
-                        let message = message_formatted.as_str();
-                        println!("{}", message);
-                        if let Some(channel_id) = channel_id {
-                            let _ = cli.sender().send_message(channel_id.as_str(), message);
-                        }
-                    },
-                    "vote" => {
-                        let message_formatted = format!("Registering vote ({:?})", command_parameters);
-                        let message = message_formatted.as_str();
-                        println!("{}", message);
-                        if let Some(channel_id) = channel_id {
-                            let _ = cli.sender().send_message(channel_id.as_str(), message);
-                        }
-                    },
-                    "list_polls" => {
-                        let message_formatted = format!("Listing all registered polls");
-                        let message = message_formatted.as_str();
-                        println!("{}", message);
-                        if let Some(channel_id) = channel_id {
-                            let _ = cli.sender().send_message(channel_id.as_str(), message);
-                        }
-                    },
-                    "help" => {
-                            let message_formatted = format!("Displaying help");
-                            let message = message_formatted.as_str();
-                            println!("{}", message);
-                            if let Some(channel_id) = channel_id {
-                                let _ = cli.sender().send_message(channel_id.as_str(), message);
-                            }
-                    },
-                    "conclude_poll" => {
-                        let message_formatted = format!("Concluding poll ({:?})", command_parameters);
-                        let message = message_formatted.as_str();
-                        println!("{}", message);
-                        if let Some(channel_id) = channel_id {
-                            let _ = cli.sender().send_message(channel_id.as_str(), message);
-                    },
-                    "show_poll_results" => {
-                        let message_formatted = format!("Displaying current poll results ({:?})", command_parameters);
-                        let message = message_formatted.as_str();
-                        println!("{}", message);
-                        if let Some(channel_id) = channel_id {
-                            let _ = cli.sender().send_message(channel_id.as_str(), message);
-                        }
-                    },
-                    _ => {
-                        let message_formatted = format!("Unknown command '{}' ({:?})", command, command_parameters);
-                        let message = message_formatted.as_str();
-                        println!("{}", message);
-                        if let Some(channel_id) = channel_id {
-                            let _ = cli.sender().send_message(channel_id.as_str(), message);
-                        }
+                    if !enough_params {
+                        let _ = cli.sender().send_message(channel_id.as_ref().unwrap().as_str(), format!("Not enough parameters for command '{}'.", command).as_str());
                     }
+                } else {
+                    let _ = cli.sender().send_message(channel_id.as_ref().unwrap().as_str(), format!("Command '{}' not found.", command).as_str());
                 }
+
+                // for command_obj in &self.commands {
+                //     if command_obj.matches(command.as_str()) {
+                //         successful_invoked = true;
+                //
+                //         let mut context = Context::new(&self.db_conn, cli, &channel_id);
+                //         let enough_params = command_obj.invoke(&mut context, command_parameters.iter().map(String::as_str).collect());
+                //
+                //         if !enough_params {
+                //             let _ = cli.sender().send_message(channel_id.as_ref().unwrap().as_str(), format!("Not enough parameters for command '{}'.", command).as_str());
+                //         }
+                //     }
+                // }
+
+                // match command.as_ref() {
+                    // "new_poll" => {
+                    //     for command_obj in &self.commands {
+                    //         if command_obj.matches(command.as_str()) {
+                    //             let mut context = Context::new(&self.db_conn, cli, &channel_id);
+                    //             let enough_params = command_obj.invoke(&mut context, command_parameters.iter().map(String::as_str).collect());
+                    //
+                    //             if !enough_params {
+                    //                 let _ = context.cli.sender().send_message(channel_id.as_ref().unwrap().as_str(), "Not enough parameters.");
+                    //             }
+                    //         }
+                    //     }
+                    // },
+                    // "start_poll" => {
+                    //     let message_formatted = format!("Starting poll ({:?})", command_parameters);
+                    //     let message = message_formatted.as_str();
+                    //     println!("{}", message);
+                    //     if let Some(channel_id) = channel_id {
+                    //         let _ = cli.sender().send_message(channel_id.as_str(), message);
+                    //     }
+                    // },
+                    // "new_user" => {
+                    //     let message_formatted = format!("Creating new user ({:?})", command_parameters);
+                    //     let message = message_formatted.as_str();
+                    //     println!("{}", message);
+                    //     if let Some(channel_id) = channel_id {
+                    //         let _ = cli.sender().send_message(channel_id.as_str(), message);
+                    //     }
+                    // },
+                    // "new_item" => {
+                    //     let message_formatted = format!("Creating new item ({:?})", command_parameters);
+                    //     let message = message_formatted.as_str();
+                    //     println!("{}", message);
+                    //     if let Some(channel_id) = channel_id {
+                    //         let _ = cli.sender().send_message(channel_id.as_str(), message);
+                    //     }
+                    // },
+                    // "new_proposal" => {
+                    //     let message_formatted = format!("Creating new proposal ({:?})", command_parameters);
+                    //     let message = message_formatted.as_str();
+                    //     println!("{}", message);
+                    //     if let Some(channel_id) = channel_id {
+                    //         let _ = cli.sender().send_message(channel_id.as_str(), message);
+                    //     }
+                    // },
+                    // "vote" => {
+                    //     let message_formatted = format!("Registering vote ({:?})", command_parameters);
+                    //     let message = message_formatted.as_str();
+                    //     println!("{}", message);
+                    //     if let Some(channel_id) = channel_id {
+                    //         let _ = cli.sender().send_message(channel_id.as_str(), message);
+                    //     }
+                    // },
+                    // "list_polls" => {
+                    //     let message_formatted = format!("Listing all registered polls");
+                    //     let message = message_formatted.as_str();
+                    //     println!("{}", message);
+                    //     if let Some(channel_id) = channel_id {
+                    //         let _ = cli.sender().send_message(channel_id.as_str(), message);
+                    //     }
+                    // },
+                    // "help" => {
+                    //         let message_formatted = format!("Displaying help");
+                    //         let message = message_formatted.as_str();
+                    //         println!("{}", message);
+                    //         if let Some(channel_id) = channel_id {
+                    //             let _ = cli.sender().send_message(channel_id.as_str(), message);
+                    //         }
+                    // },
+                    // "conclude_poll" => {
+                    //     let message_formatted = format!("Concluding poll ({:?})", command_parameters);
+                    //     let message = message_formatted.as_str();
+                    //     println!("{}", message);
+                    //     if let Some(channel_id) = channel_id {
+                    //         let _ = cli.sender().send_message(channel_id.as_str(), message);
+                    //     }
+                    // },
+                    // "show_poll_results" => {
+                    //     let message_formatted = format!("Displaying current poll results ({:?})", command_parameters);
+                    //     let message = message_formatted.as_str();
+                    //     println!("{}", message);
+                    //     if let Some(channel_id) = channel_id {
+                    //         let _ = cli.sender().send_message(channel_id.as_str(), message);
+                    //     }
+                    // },
+                //     _ => {
+                //         // let message_formatted = format!("Unknown command '{}' ({:?})", command, command_parameters);
+                //         // let message = message_formatted.as_str();
+                //         // println!("{}", message);
+                //         // if let Some(channel_id) = channel_id {
+                //         //     let _ = cli.sender().send_message(channel_id.as_str(), message);
+                //         // }
+                //     }
+                // }
             }
         }
     }
@@ -234,14 +255,6 @@ impl slack::EventHandler for BasicHandler {
     }
 
     fn on_connect(&mut self, cli: &RtmClient) {
-        // TODO: Remove all of this, because it will not be needed
-        println!("on_connect");
-
-        let channel_name = "general";
-        let channel = get_channel_id(cli, channel_name).expect(format!("channel '{}' not found", channel_name).as_str());
-        let channel_id = channel.id.as_ref().expect("cannot extract channel id");
-
-        let _ = cli.sender().send_message(channel_id, "Hello world!");
     }
 }
 
@@ -265,14 +278,59 @@ pub fn create_poll<'a>(db_conn: &SqliteConnection, name: &'a str, status: PollSt
         .execute(db_conn)
 }
 
+
+
 fn main() {
     dotenv().ok();
+
+    let new_poll = |context: &mut Context, args: Vec<&str>| -> bool {
+        if args.len() < 1 {
+            return false;
+        }
+
+        if args.len() > 0 {
+            let poll_name = args[0];
+            let mut message_formatted = format!("Creating a new poll '{}'", poll_name);
+
+            if let Some(channel_id) = context.channel.as_ref() {
+                let result = create_poll(&context.db_conn, poll_name, PollStatus::InProgress);
+
+                match result {
+                    Err(Error::DatabaseError(error_type, error_message)) => {
+                        match error_type {
+                            DatabaseErrorKind::UniqueViolation => message_formatted = format!("Poll name already taken!"),
+                            _ => ()
+                        }
+                    },
+                    Err(_) => (),
+                    Ok(_) => ()
+                }
+
+                let message = message_formatted.as_str();
+                println!("{}", message);
+
+                let _ = context.cli.sender().send_message(channel_id.as_str(), message);
+            }
+        } else {
+            let message = "Please specify the unique name of the poll";
+            println!("{}", message);
+            if let Some(channel_id) = context.channel.as_ref() {
+                let _ = context.cli.sender().send_message(channel_id.as_str(), message);
+            }
+        }
+
+        return true;
+    };
+
+    let mut commands: HashSet<Command> = HashSet::new();
+    commands.insert(Command::new("new_poll", Box::new(new_poll)));
 
     let db_conn = establish_connection();
 
     let api_key = env::var("SLACK_API_TOKEN").expect("SLACK_API_TOKEN not set.");
     let mut handler = BasicHandler {
-        db_conn: db_conn
+        db_conn: db_conn,
+        commands: commands
     };
     let r = RtmClient::login_and_run(&api_key, &mut handler);
 
