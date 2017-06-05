@@ -338,9 +338,18 @@ fn main() {
         true
     };
 
+    let help = |context: &mut Context, args: Vec<&str>| -> bool {
+        if let Some(channel_id) = context.channel.as_ref() {
+            let _ = context.cli.sender().send_message(channel_id.as_str(), "I cannot help you right now :confused:. Maybe try a real person?");
+        }
+
+        true
+    };
+
     let mut commands: HashSet<Command> = HashSet::new();
     commands.insert(Command::new("new_poll", Box::new(new_poll)));
     commands.insert(Command::new("list_polls", Box::new(list_polls)));
+    commands.insert(Command::new("help", Box::new(help)));
 
     let db_conn = establish_connection();
 
