@@ -205,22 +205,6 @@ impl <'a> slack::EventHandler for BasicHandler<'a> {
                     //         let _ = cli.sender().send_message(channel_id.as_str(), message);
                     //     }
                     // },
-                    // "list_polls" => {
-                    //     let message_formatted = format!("Listing all registered polls");
-                    //     let message = message_formatted.as_str();
-                    //     println!("{}", message);
-                    //     if let Some(channel_id) = channel_id {
-                    //         let _ = cli.sender().send_message(channel_id.as_str(), message);
-                    //     }
-                    // },
-                    // "help" => {
-                    //         let message_formatted = format!("Displaying help");
-                    //         let message = message_formatted.as_str();
-                    //         println!("{}", message);
-                    //         if let Some(channel_id) = channel_id {
-                    //             let _ = cli.sender().send_message(channel_id.as_str(), message);
-                    //         }
-                    // },
                     // "conclude_poll" => {
                     //     let message_formatted = format!("Concluding poll ({:?})", command_parameters);
                     //     let message = message_formatted.as_str();
@@ -292,7 +276,7 @@ fn main() {
         let mut message_formatted = format!("Creating a new poll '{}'", poll_name);
 
         if let Some(channel_id) = context.channel.as_ref() {
-            let result = create_poll(&context.db_conn, poll_name, PollStatus::InProgress);
+            let result = create_poll(&context.db_conn, poll_name, PollStatus::Stopped);
 
             match result {
                 Err(Error::DatabaseError(error_type, error_message)) => {
