@@ -19,8 +19,16 @@ impl <'a> Command<'a> {
     }
 
     pub fn invoke(&self, context: &mut Context, parameters: Vec<&str>) -> bool {
-        // TODO: context.user.as_ref().unwrap().name.as_ref().unwrap() Really? wtf
-        println!("[Info] Invoking command {} by {} with parameters {:?}.", self.name, context.user.as_ref().unwrap().name.as_ref().unwrap(), parameters);
+        // TODO: Better with chained map etc. magic?
+        let mut user_name = "<UNKNOWN USER>";
+
+        if let Some(user) = context.user.as_ref() {
+            if let Some(name) = user.name.as_ref() {
+                user_name = name;
+            }
+        }
+
+        println!("[Info] Invoking command {} by {} with parameters {:?}.", self.name, user_name, parameters);
         (self.callback)(context, parameters)
     }
 

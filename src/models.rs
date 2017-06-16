@@ -79,3 +79,10 @@ pub struct Voter {
     pub name: String,
     pub slack_id: Option<String>
 }
+
+#[derive(Insertable)]
+#[table_name="voters"]
+pub struct NewVoter {
+    pub name: String,
+    pub slack_id: Option<String> // TODO: Should not be optional and it should be unique as name can be changed!
+}

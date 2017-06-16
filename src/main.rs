@@ -223,6 +223,19 @@ pub fn conclude_poll(db_conn: &SqliteConnection, poll_name: &str) -> Result<usiz
         .execute(db_conn)
 }
 
+fn create_voter(db_conn: &SqliteConnection, user_id: &str, user_name: &str) -> Result<usize, diesel::result::Error> {
+    use schema::voters;
+
+    let new_voter = NewVoter {
+        name: user_name.to_owned(),
+        slack_id: Some(user_id.to_owned())
+    };
+
+    diesel::insert(&new_voter)
+        .into(voters::table)
+        .execute(db_conn)
+}
+
 fn main() {
     dotenv().ok();
 
@@ -343,6 +356,41 @@ fn main() {
         true
     };
 
+    let new_voter = |context: &mut Context, args: Vec<&str>| -> bool {
+        if !context.user.is_some() {
+            println!("Error: Cannot create voter.");
+            return true;
+        }
+
+        let user = context.user.as_ref().unwrap();
+        let user_name = user.name.as_ref().unwrap();
+        let user_id = user.id.as_ref().unwrap();
+
+        let mut message_formatted = format!("Creating a new voter '{}' ({}).", user_name, user_id);
+
+        if let Some(channel_id) = context.channel.as_ref() {
+            let result = create_voter(&context.db_conn, user_id, user_name);
+
+            match result {
+                Err(Error::DatabaseError(error_type, error_message)) => {
+                    match error_type {
+                        DatabaseErrorKind::UniqueViolation => message_formatted = format!("User name already exists!"),
+                        _ => ()
+                    }
+                },
+                Err(_) => (),
+                Ok(_) => ()
+            }
+
+            let message = message_formatted.as_str();
+            println!("{}", message);
+
+            let _ = context.cli.sender().send_message(channel_id.as_str(), message);
+        }
+
+        true
+    };
+
     let help = |context: &mut Context, args: Vec<&str>| -> bool {
         if let Some(channel_id) = context.channel.as_ref() {
             let _ = context.cli.sender().send_message(channel_id.as_str(), "I cannot help you right now :confused:. Maybe try a real person?");
@@ -352,7 +400,7 @@ fn main() {
     };
 
     // TODO: Implemented the following commands:
-    // * new_user
+    // * new_voter (/)
     // * new_item
     // * new_proposal
     // * vote
@@ -363,6 +411,7 @@ fn main() {
     commands.insert(Command::new("start_poll", Box::new(start_poll)));
     commands.insert(Command::new("conclude_poll", Box::new(conclude_poll)));
     commands.insert(Command::new("list_polls", Box::new(list_polls)));
+    commands.insert(Command::new("new_voter", Box::new(new_voter)));
     commands.insert(Command::new("help", Box::new(help)));
 
     let db_conn = establish_connection();
