@@ -1,6 +1,6 @@
 use diesel::sqlite::{SqliteConnection};
 
-use slack::{Channel, RtmClient};
+use slack::{Channel, RtmClient, User};
 
 use std::cmp::{PartialEq, Eq};
 use std::hash::{Hash, Hasher};
@@ -19,7 +19,8 @@ impl <'a> Command<'a> {
     }
 
     pub fn invoke(&self, context: &mut Context, parameters: Vec<&str>) -> bool {
-        println!("[Info] Invoking command {} with parameters {:?}.", self.name, parameters);
+        // TODO: context.user.as_ref().unwrap().name.as_ref().unwrap() Really? wtf
+        println!("[Info] Invoking command {} by {} with parameters {:?}.", self.name, context.user.as_ref().unwrap().name.as_ref().unwrap(), parameters);
         (self.callback)(context, parameters)
     }
 
@@ -45,15 +46,17 @@ impl <'a> Hash for Command<'a> {
 pub struct Context<'a> {
     pub db_conn: &'a SqliteConnection,
     pub cli: &'a RtmClient,
-    pub channel: &'a Option<String>
+    pub channel: &'a Option<String>,
+    pub user: &'a Option<User>
 }
 
 impl <'a> Context<'a> {
-    pub fn new(db_conn: &'a SqliteConnection, cli: &'a RtmClient, channel: &'a Option<String>) -> Context<'a> {
+    pub fn new(db_conn: &'a SqliteConnection, cli: &'a RtmClient, channel: &'a Option<String>, user: &'a Option<User>) -> Context<'a> {
         Context {
             db_conn: db_conn,
             cli: cli,
-            channel: channel
+            channel: channel,
+            user: user
         }
     }
 }

@@ -11,7 +11,7 @@ use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
 use diesel::result::{Error, DatabaseErrorKind};
 
-use slack::{Channel, Event, Message, RtmClient};
+use slack::{Channel, Event, Message, RtmClient, User};
 
 use dotenv::dotenv;
 
@@ -23,11 +23,6 @@ use self::models::*;
 
 // TODO: Should come from config
 const COMMAND_TOKEN: &'static str = "*";
-
-struct BasicHandler<'a> {
-    pub db_conn: SqliteConnection,
-    pub commands: HashSet<Command<'a>>
-}
 
 fn get_channel_id<'a>(cli: &'a RtmClient, channel_name: &str) -> Option<&'a Channel> {
     cli.start_response()
@@ -93,6 +88,12 @@ fn get_command_implementation<'a>(command_name: &str, command_implementations: &
     None
 }
 
+struct BasicHandler<'a> {
+    pub db_conn: SqliteConnection,
+    pub commands: HashSet<Command<'a>>,
+    pub users: Vec<User>
+}
+
 impl <'a> slack::EventHandler for BasicHandler<'a> {
     fn on_event(&mut self, cli: &RtmClient, event: Event) {
         println!("on_event(event: {:?})", event);
@@ -103,16 +104,16 @@ impl <'a> slack::EventHandler for BasicHandler<'a> {
         // TODO: 4 Execute command call with specific context
 
         // TODO: 1 (ugly)
-        let (input, channel_id) = match event {
+        let (input, channel_id, user_id) = match event {
             Event::Message(message) => {
                 match *message {
                     Message::Standard(standard_message) => {
-                        (standard_message.text, standard_message.channel)
+                        (standard_message.text, standard_message.channel, standard_message.user)
                     },
-                    _ => (None, None)
+                    _ => (None, None, None)
                 }
             },
-            _ => (None, None)
+            _ => (None, None, None)
         };
 
         if let Some(input) = input {
@@ -127,8 +128,14 @@ impl <'a> slack::EventHandler for BasicHandler<'a> {
 
                 let command_implementation_option = get_command_implementation(command.as_str(), &self.commands);
 
+                let user = self.users.iter()
+                    .find(|user| user.id.as_ref().unwrap() == user_id.as_ref().unwrap())
+                    .unwrap()
+                    .clone();
+
                 if let Some(command_implementation) = command_implementation_option {
-                    let mut context = Context::new(&self.db_conn, cli, &channel_id);
+                    let user = Some(user);
+                    let mut context = Context::new(&self.db_conn, cli, &channel_id, &user);
                     let enough_params = command_implementation.invoke(&mut context, command_parameters.iter().map(String::as_str).collect());
 
                     if !enough_params {
@@ -146,6 +153,13 @@ impl <'a> slack::EventHandler for BasicHandler<'a> {
     }
 
     fn on_connect(&mut self, cli: &RtmClient) {
+        // Save users
+        let users: Vec<_> = cli.start_response()
+            .users
+            .clone()
+            .unwrap_or_else(Vec::new);
+
+        self.users.extend(users.clone());
     }
 }
 
@@ -356,7 +370,8 @@ fn main() {
     let api_key = env::var("SLACK_API_TOKEN").expect("SLACK_API_TOKEN not set.");
     let mut handler = BasicHandler {
         db_conn: db_conn,
-        commands: commands
+        commands: commands,
+        users: Vec::new()
     };
     let r = RtmClient::login_and_run(&api_key, &mut handler);
 
