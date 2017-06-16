@@ -236,6 +236,18 @@ fn create_voter(db_conn: &SqliteConnection, user_id: &str, user_name: &str) -> R
         .execute(db_conn)
 }
 
+fn create_item(db_conn: &SqliteConnection, item_name: &str) -> Result<usize, diesel::result::Error> {
+    use schema::items;
+
+    let new_item = NewItem {
+        name: item_name.to_owned().to_lowercase(),
+    };
+
+    diesel::insert(&new_item)
+        .into(items::table)
+        .execute(db_conn)
+}
+
 fn main() {
     dotenv().ok();
 
@@ -391,6 +403,37 @@ fn main() {
         true
     };
 
+    let new_item = |context: &mut Context, args: Vec<&str>| -> bool {
+        if args.len() < 1 {
+            return false;
+        }
+
+        let item_name = args[0];
+        let mut message_formatted = format!("Creating a new item '{}'.", item_name);
+
+        if let Some(channel_id) = context.channel.as_ref() {
+            let result = create_item(&context.db_conn, item_name);
+
+            match result {
+                Err(Error::DatabaseError(error_type, error_message)) => {
+                    match error_type {
+                        DatabaseErrorKind::UniqueViolation => message_formatted = format!("Item name already taken!"),
+                        _ => ()
+                    }
+                },
+                Err(_) => (),
+                Ok(_) => ()
+            }
+
+            let message = message_formatted.as_str();
+            println!("{}", message);
+
+            let _ = context.cli.sender().send_message(channel_id.as_str(), message);
+        }
+
+        true
+    };
+
     let help = |context: &mut Context, args: Vec<&str>| -> bool {
         if let Some(channel_id) = context.channel.as_ref() {
             let _ = context.cli.sender().send_message(channel_id.as_str(), "I cannot help you right now :confused:. Maybe try a real person?");
@@ -401,7 +444,7 @@ fn main() {
 
     // TODO: Implemented the following commands:
     // * new_voter (/)
-    // * new_item
+    // * new_item (/)
     // * new_proposal
     // * vote
     // * show_poll_results
@@ -412,6 +455,7 @@ fn main() {
     commands.insert(Command::new("conclude_poll", Box::new(conclude_poll)));
     commands.insert(Command::new("list_polls", Box::new(list_polls)));
     commands.insert(Command::new("new_voter", Box::new(new_voter)));
+    commands.insert(Command::new("new_item", Box::new(new_item)));
     commands.insert(Command::new("help", Box::new(help)));
 
     let db_conn = establish_connection();

@@ -52,6 +52,12 @@ pub struct Item {
     pub name: String
 }
 
+#[derive(Insertable)]
+#[table_name="items"]
+pub struct NewItem {
+    pub name: String
+}
+
 #[derive(Identifiable, Queryable, Associations)]
 #[has_many(votes)]
 #[belongs_to(Poll)]
