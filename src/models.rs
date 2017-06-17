@@ -1,10 +1,11 @@
 use schema::{polls, items, proposals, votes, voters};
 
+#[derive(Clone)]
 pub enum PollStatus {
     Aborted, // Not in use
     Concluded,
     InProgress,
-    Stopped // Not in use
+    Stopped
 }
 
 impl PollStatus {
@@ -28,7 +29,7 @@ impl PollStatus {
     }
 }
 
-#[derive(Identifiable, Queryable, Associations)]
+#[derive(Identifiable, Queryable, Associations, Clone)]
 #[has_many(proposals)]
 pub struct Poll {
     pub id: i32,
@@ -38,27 +39,27 @@ pub struct Poll {
     pub concluded_at: Option<String>
 }
 
-#[derive(Insertable)]
+#[derive(Insertable, Clone)]
 #[table_name="polls"]
 pub struct NewPoll<'a> {
     pub name: &'a str,
     pub status: &'a str,
 }
 
-#[derive(Identifiable, Queryable, Associations)]
+#[derive(Identifiable, Queryable, Associations, Clone)]
 #[has_many(proposals)]
 pub struct Item {
     pub id: i32,
     pub name: String
 }
 
-#[derive(Insertable)]
+#[derive(Insertable, Clone)]
 #[table_name="items"]
 pub struct NewItem {
     pub name: String
 }
 
-#[derive(Identifiable, Queryable, Associations)]
+#[derive(Identifiable, Queryable, Associations, Clone)]
 #[has_many(votes)]
 #[belongs_to(Poll)]
 #[belongs_to(Item)]
@@ -68,7 +69,14 @@ pub struct Proposal {
     pub item_id: i32
 }
 
-#[derive(Identifiable, Queryable, Associations)]
+#[derive(Insertable, Clone)]
+#[table_name="proposals"]
+pub struct NewProposal {
+    pub poll_id: i32,
+    pub item_id: i32
+}
+
+#[derive(Identifiable, Queryable, Associations, Clone)]
 #[belongs_to(Voter)]
 #[belongs_to(Proposal)]
 pub struct Vote {
@@ -78,7 +86,7 @@ pub struct Vote {
     pub weight: i32
 }
 
-#[derive(Identifiable, Queryable, Associations)]
+#[derive(Identifiable, Queryable, Associations, Clone)]
 #[has_many(votes)]
 pub struct Voter {
     pub id: i32,
@@ -86,7 +94,7 @@ pub struct Voter {
     pub slack_id: Option<String>
 }
 
-#[derive(Insertable)]
+#[derive(Insertable, Clone)]
 #[table_name="voters"]
 pub struct NewVoter {
     pub name: String,

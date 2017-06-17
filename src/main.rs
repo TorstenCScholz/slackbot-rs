@@ -248,6 +248,45 @@ fn create_item(db_conn: &SqliteConnection, item_name: &str) -> Result<usize, die
         .execute(db_conn)
 }
 
+pub fn find_poll_by_name<'a, 'b>(db_conn: &'a SqliteConnection, poll_name: &'a str) -> Result<Poll, diesel::result::Error> {
+    use self::schema::polls::dsl::*;
+
+    let results = polls
+        .filter(name.eq(poll_name))
+        .limit(1)
+        .load::<Poll>(db_conn)
+        .expect("Cannot load polls from DB.");
+
+    // TODO: What if not found?
+    Ok(results[0].clone())
+}
+
+pub fn find_item_by_name<'a>(db_conn: &'a SqliteConnection, item_name: &'a str) -> Result<Item, diesel::result::Error> {
+    use self::schema::items::dsl::*;
+
+    let results = items
+        .filter(name.eq(item_name))
+        .limit(1)
+        .load::<Item>(db_conn)
+        .expect("Cannot load items from DB.");
+
+    // TODO: What if not found?
+    Ok(results[0].clone())
+}
+
+fn create_proposal(db_conn: &SqliteConnection, poll_id: i32, item_id: i32) -> Result<usize, diesel::result::Error> {
+    use schema::proposals;
+
+    let new_proposal = NewProposal {
+        poll_id: poll_id,
+        item_id: item_id
+    };
+
+    diesel::insert(&new_proposal)
+        .into(proposals::table)
+        .execute(db_conn)
+}
+
 fn main() {
     dotenv().ok();
 
@@ -368,6 +407,30 @@ fn main() {
         true
     };
 
+    let list_items = |context: &mut Context, args: Vec<&str>| -> bool {
+        use self::schema::items::dsl::*;
+
+        if let Some(channel_id) = context.channel.as_ref() {
+            let results = items
+                .order(id.desc())
+                .limit(5)
+                .load::<Item>(context.db_conn)
+                .expect("Error loading items");
+
+            println!("Displaying {} items", results.len());
+
+            let mut message = format!("Displaying latest items:\n");
+
+            for (num, item) in results.iter().enumerate() {
+                message = format!("{}{}. {}\n", message, (num + 1), item.name);
+            }
+
+            let _ = context.cli.sender().send_message(channel_id.as_str(), message.as_str());
+        }
+
+        true
+    };
+
     let new_voter = |context: &mut Context, args: Vec<&str>| -> bool {
         if !context.user.is_some() {
             println!("Error: Cannot create voter.");
@@ -434,6 +497,44 @@ fn main() {
         true
     };
 
+    let new_proposal = |context: &mut Context, args: Vec<&str>| -> bool {
+        if args.len() < 2 {
+            return false;
+        }
+
+        let poll_name = args[0];
+        let item_name = args[1];
+        let mut message_formatted = format!("Creating a new proposal for '{}' at '{}'.", poll_name, item_name);
+
+        // TODO: Error handling
+        let poll = find_poll_by_name(context.db_conn, poll_name).unwrap();
+        let item = find_item_by_name(context.db_conn, item_name).unwrap();
+
+        // TODO: Exit if proposal already exists
+
+        if let Some(channel_id) = context.channel.as_ref() {
+            let result = create_proposal(&context.db_conn, poll.id, item.id);
+
+            match result {
+                Err(Error::DatabaseError(error_type, error_message)) => {
+                    match error_type {
+                        DatabaseErrorKind::UniqueViolation => message_formatted = format!("Item name already taken!"),
+                        _ => ()
+                    }
+                },
+                Err(_) => (),
+                Ok(_) => ()
+            }
+
+            let message = message_formatted.as_str();
+            println!("{}", message);
+
+            let _ = context.cli.sender().send_message(channel_id.as_str(), message);
+        }
+
+        true
+    };
+
     let help = |context: &mut Context, args: Vec<&str>| -> bool {
         if let Some(channel_id) = context.channel.as_ref() {
             let _ = context.cli.sender().send_message(channel_id.as_str(), "I cannot help you right now :confused:. Maybe try a real person?");
@@ -445,7 +546,7 @@ fn main() {
     // TODO: Implemented the following commands:
     // * new_voter (/)
     // * new_item (/)
-    // * new_proposal
+    // * new_proposal (/)
     // * vote
     // * show_poll_results
 
@@ -454,8 +555,10 @@ fn main() {
     commands.insert(Command::new("start_poll", Box::new(start_poll)));
     commands.insert(Command::new("conclude_poll", Box::new(conclude_poll)));
     commands.insert(Command::new("list_polls", Box::new(list_polls)));
+    commands.insert(Command::new("list_items", Box::new(list_items)));
     commands.insert(Command::new("new_voter", Box::new(new_voter)));
     commands.insert(Command::new("new_item", Box::new(new_item)));
+    commands.insert(Command::new("new_proposal", Box::new(new_proposal)));
     commands.insert(Command::new("help", Box::new(help)));
 
     let db_conn = establish_connection();
