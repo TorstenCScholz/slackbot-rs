@@ -287,6 +287,88 @@ fn create_proposal(db_conn: &SqliteConnection, poll_id: i32, item_id: i32) -> Re
         .execute(db_conn)
 }
 
+fn find_proposal_by_poll_name_and_item_name(db_conn: &SqliteConnection, poll_name: &str, item_name: &str) -> Result<Proposal, diesel::result::Error> {
+    use self::schema::proposals::dsl::*;
+
+    // TODO: Error handling
+    let poll = find_poll_by_name(db_conn, poll_name).unwrap();
+    let item = find_item_by_name(db_conn, item_name).unwrap();
+
+    let results = proposals
+        .filter(poll_id.eq(poll.id))
+        .filter(item_id.eq(item.id))
+        .limit(1)
+        .load::<Proposal>(db_conn)
+        .expect("Cannot load proposals from DB.");
+
+    // TODO: What if not found?
+    Ok(results[0].clone())
+}
+
+fn find_voter_by_slack_id(db_conn: &SqliteConnection, slack_id: &str) -> Result<Voter, diesel::result::Error> {
+    use self::schema::voters::dsl::*;
+
+    let results = voters
+        .filter(slack_id.eq(slack_id))
+        .limit(1)
+        .load::<Voter>(db_conn)
+        .expect("Cannot load voters from DB.");
+
+    // TODO: What if not found?
+    Ok(results[0].clone())
+}
+
+fn find_vote_by_proposal_id_and_voter_id(db_conn: &SqliteConnection, proposal_id: i32, voter_id: i32) -> Result<Option<Vote>, diesel::result::Error> {
+    use self::schema::votes::dsl::*;
+
+    let results = votes
+        .filter(proposal_id.eq(proposal_id))
+        .filter(voter_id.eq(voter_id))
+        .limit(1)
+        .load::<Vote>(db_conn)
+        .expect("Cannot load votes from DB.");
+
+    if results.len() == 0 {
+        Ok(None)
+    } else {
+        Ok(Some(results[0].clone()))
+    }
+}
+
+fn exists_vote(db_conn: &SqliteConnection, proposal_id: i32, voter_id: i32) -> bool {
+    let vote = find_vote_by_proposal_id_and_voter_id(db_conn, proposal_id, voter_id);
+
+    if !vote.is_ok() {
+        return false;
+    }
+
+    vote.unwrap().is_some()
+}
+
+fn create_vote(db_conn: &SqliteConnection, voter_id: i32, proposal_id: i32, weight: i32) -> Result<usize, diesel::result::Error> {
+    use schema::votes;
+
+    let new_vote = NewVote {
+        voter_id: voter_id,
+        proposal_id: proposal_id,
+        weight: weight
+    };
+
+    diesel::insert(&new_vote)
+        .into(votes::table)
+        .execute(db_conn)
+}
+
+fn update_vote(db_conn: &SqliteConnection, voter_id_param: i32, proposal_id_param: i32, weight_param: i32) -> Result<usize, diesel::result::Error> {
+    use self::schema::votes::dsl::*;
+
+    diesel::update(votes
+                    .filter(voter_id.eq(voter_id_param))
+                    .filter(proposal_id.eq(proposal_id_param)))
+        .set(weight.eq(weight_param))
+        .execute(db_conn)
+}
+
 fn main() {
     dotenv().ok();
 
@@ -535,6 +617,57 @@ fn main() {
         true
     };
 
+    let vote = |context: &mut Context, args: Vec<&str>| -> bool {
+        if args.len() < 3 {
+            return false;
+        }
+
+        let poll_name = args[0];
+        let item_name = args[1];
+        let weight_char = args[2];
+
+        let weight = match weight_char {
+            "-" => -1,
+            _ => 1
+        };
+        let mut message_formatted = format!("Accepting vote for '{}' at '{}' with weight {}.", poll_name, item_name, weight);
+
+        // TODO: Error handling
+        // let poll = find_poll_by_name(context.db_conn, poll_name).unwrap();
+        // let item = find_item_by_name(context.db_conn, item_name).unwrap();
+
+        let proposal = find_proposal_by_poll_name_and_item_name(context.db_conn, poll_name, item_name).unwrap();
+        let voter = find_voter_by_slack_id(context.db_conn, context.user.as_ref().unwrap().id.as_ref().unwrap()).unwrap();
+
+        if let Some(channel_id) = context.channel.as_ref() {
+            let vote_exists = exists_vote(context.db_conn, proposal.id, voter.id);
+
+            let result = if !vote_exists {
+                create_vote(context.db_conn, voter.id, proposal.id, weight)
+            } else {
+                update_vote(context.db_conn, voter.id, proposal.id, weight)
+            };
+
+            match result {
+                Err(Error::DatabaseError(error_type, error_message)) => {
+                    match error_type {
+                        DatabaseErrorKind::UniqueViolation => message_formatted = format!("Vote already cast!"),
+                        _ => ()
+                    }
+                },
+                Err(_) => (),
+                Ok(_) => ()
+            }
+
+            let message = message_formatted.as_str();
+            println!("{}", message);
+
+            let _ = context.cli.sender().send_message(channel_id.as_str(), message);
+        }
+
+        true
+    };
+
     let help = |context: &mut Context, args: Vec<&str>| -> bool {
         if let Some(channel_id) = context.channel.as_ref() {
             let _ = context.cli.sender().send_message(channel_id.as_str(), "I cannot help you right now :confused:. Maybe try a real person?");
@@ -547,7 +680,7 @@ fn main() {
     // * new_voter (/)
     // * new_item (/)
     // * new_proposal (/)
-    // * vote
+    // * vote (/)
     // * show_poll_results
 
     let mut commands: HashSet<Command> = HashSet::new();
@@ -559,6 +692,8 @@ fn main() {
     commands.insert(Command::new("new_voter", Box::new(new_voter)));
     commands.insert(Command::new("new_item", Box::new(new_item)));
     commands.insert(Command::new("new_proposal", Box::new(new_proposal)));
+    commands.insert(Command::new("vote", Box::new(vote)));
+    // commands.insert(Command::new("show_poll_results", Box::new(show_poll_results)));
     commands.insert(Command::new("help", Box::new(help)));
 
     let db_conn = establish_connection();
@@ -575,16 +710,4 @@ fn main() {
         Ok(_) => {}
         Err(err) => panic!("Error: {}", err),
     }
-
-    // let results = polls.filter(status.eq(PollStatus::InProgress.as_str()))
-    //     .limit(5)
-    //     .load::<Poll>(&connection)
-    //     .expect("Error loading polls");
-    //
-    // println!("Displaying {} polls", results.len());
-    // for poll in results {
-    //     println!("{}", poll.name);
-    //     println!("{}", poll.status);
-    //     println!("{}", poll.started_at.unwrap_or("None".to_owned()));
-    // }
 }

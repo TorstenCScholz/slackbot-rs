@@ -86,6 +86,14 @@ pub struct Vote {
     pub weight: i32
 }
 
+#[derive(Insertable, Clone)]
+#[table_name="votes"]
+pub struct NewVote {
+    pub voter_id: i32,
+    pub proposal_id: i32,
+    pub weight: i32
+}
+
 #[derive(Identifiable, Queryable, Associations, Clone)]
 #[has_many(votes)]
 pub struct Voter {
