@@ -261,6 +261,50 @@ pub fn find_poll_by_name<'a, 'b>(db_conn: &'a SqliteConnection, poll_name: &'a s
     Ok(results[0].clone())
 }
 
+pub fn find_proposals_by_poll<'a, 'b>(db_conn: &'a SqliteConnection, poll: &'a Poll) -> Result<Vec<Proposal>, diesel::result::Error> {
+    use self::schema::proposals::dsl::*;
+
+    let results = proposals
+        .filter(poll_id.eq(poll.id))
+        .load::<Proposal>(db_conn)
+        .expect("Cannot load proposals from DB.");
+
+    Ok(results.clone())
+}
+
+pub fn find_votes_by_proposal<'a, 'b>(db_conn: &'a SqliteConnection, proposal: &'a Proposal) -> Result<Vec<Vote>, diesel::result::Error> {
+    use self::schema::votes::dsl::*;
+
+    let results = votes
+        .filter(proposal_id.eq(proposal.id))
+        .load::<Vote>(db_conn)
+        .expect("Cannot load votes from DB.");
+
+    Ok(results.clone())
+}
+
+pub fn find_item_by_proposal<'a, 'b>(db_conn: &'a SqliteConnection, proposal: &'a Proposal) -> Result<Item, diesel::result::Error> {
+    use self::schema::items::dsl::*;
+
+    let results = items
+        .filter(id.eq(proposal.item_id))
+        .load::<Item>(db_conn)
+        .expect("Cannot load items from DB.");
+
+    Ok(results[0].clone())
+}
+
+pub fn find_voter_by_vote<'a, 'b>(db_conn: &'a SqliteConnection, vote: &'a Vote) -> Result<Voter, diesel::result::Error> {
+    use self::schema::voters::dsl::*;
+
+    let results = voters
+        .filter(id.eq(vote.voter_id))
+        .load::<Voter>(db_conn)
+        .expect("Cannot load votes from DB.");
+
+    Ok(results[0].clone())
+}
+
 pub fn find_item_by_name<'a>(db_conn: &'a SqliteConnection, item_name: &'a str) -> Result<Item, diesel::result::Error> {
     use self::schema::items::dsl::*;
 
@@ -318,12 +362,12 @@ fn find_voter_by_slack_id(db_conn: &SqliteConnection, slack_id: &str) -> Result<
     Ok(results[0].clone())
 }
 
-fn find_vote_by_proposal_id_and_voter_id(db_conn: &SqliteConnection, proposal_id: i32, voter_id: i32) -> Result<Option<Vote>, diesel::result::Error> {
-    use self::schema::votes::dsl::*;
+fn find_vote_by_proposal_id_and_voter_id(db_conn: &SqliteConnection, proposal_id_param: i32, voter_id_param: i32) -> Result<Option<Vote>, diesel::result::Error> {
+    use self::schema::votes::*;
 
-    let results = votes
-        .filter(proposal_id.eq(proposal_id))
-        .filter(voter_id.eq(voter_id))
+    let results = dsl::votes
+        .filter(dsl::proposal_id.eq(proposal_id_param))
+        .filter(dsl::voter_id.eq(voter_id_param))
         .limit(1)
         .load::<Vote>(db_conn)
         .expect("Cannot load votes from DB.");
@@ -643,8 +687,10 @@ fn main() {
             let vote_exists = exists_vote(context.db_conn, proposal.id, voter.id);
 
             let result = if !vote_exists {
+                println!("Creating vote: prop({})", proposal.id);
                 create_vote(context.db_conn, voter.id, proposal.id, weight)
             } else {
+                println!("Updating vote: prop({})", proposal.id);
                 update_vote(context.db_conn, voter.id, proposal.id, weight)
             };
 
@@ -668,6 +714,41 @@ fn main() {
         true
     };
 
+    let show_poll_results = |context: &mut Context, args: Vec<&str>| -> bool {
+        if args.len() < 1 {
+            return false;
+        }
+
+        let poll_name = args[0];
+
+        let poll = find_poll_by_name(context.db_conn, poll_name).unwrap();
+
+        if let Some(channel_id) = context.channel.as_ref() {
+            let proposals = find_proposals_by_poll(context.db_conn, &poll).unwrap();
+
+            let mut message = format!("Displaying poll results for {}:\n", poll_name);
+
+            for proposal in proposals.iter() {
+                let item = find_item_by_proposal(context.db_conn, &proposal).unwrap();
+                let votes = find_votes_by_proposal(context.db_conn, &proposal).unwrap();
+
+                message = format!("{}{}:", message, item.name);
+
+                for vote in votes.iter() {
+                    let voter = find_voter_by_vote(context.db_conn, &vote).unwrap();
+
+                    message = format!("{} {}({})", message, voter.name, vote.weight);
+                }
+
+                message = format!("{}\n", message);
+            }
+
+            let _ = context.cli.sender().send_message(channel_id.as_str(), message.as_str());
+        }
+
+        true
+    };
+
     let help = |context: &mut Context, args: Vec<&str>| -> bool {
         if let Some(channel_id) = context.channel.as_ref() {
             let _ = context.cli.sender().send_message(channel_id.as_str(), "I cannot help you right now :confused:. Maybe try a real person?");
@@ -681,7 +762,7 @@ fn main() {
     // * new_item (/)
     // * new_proposal (/)
     // * vote (/)
-    // * show_poll_results
+    // * show_poll_results (/)
 
     let mut commands: HashSet<Command> = HashSet::new();
     commands.insert(Command::new("new_poll", Box::new(new_poll)));
@@ -693,7 +774,7 @@ fn main() {
     commands.insert(Command::new("new_item", Box::new(new_item)));
     commands.insert(Command::new("new_proposal", Box::new(new_proposal)));
     commands.insert(Command::new("vote", Box::new(vote)));
-    // commands.insert(Command::new("show_poll_results", Box::new(show_poll_results)));
+    commands.insert(Command::new("show_poll_results", Box::new(show_poll_results)));
     commands.insert(Command::new("help", Box::new(help)));
 
     let db_conn = establish_connection();
