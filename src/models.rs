@@ -1,6 +1,6 @@
 use schema::{polls, items, proposals, votes, voters};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum PollStatus {
     Aborted, // Not in use
     Concluded,

@@ -1,6 +1,6 @@
 use diesel::sqlite::{SqliteConnection};
 
-use slack::{Channel, RtmClient, User};
+use slack::{RtmClient, User};
 
 use std::cmp::{PartialEq, Eq};
 use std::hash::{Hash, Hasher};
