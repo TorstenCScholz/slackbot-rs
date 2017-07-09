@@ -906,29 +906,39 @@ fn main() {
 
         let poll_name = args[0];
 
-        // TODO: remove unwrap
-        let poll = find_poll_by_name(context.db_conn, poll_name).unwrap();
-
         if let Some(channel_id) = context.channel.as_ref() {
+            // TODO: remove unwrap
+            let poll_option = find_poll_by_name(context.db_conn, poll_name);
+
+            if !poll_option.is_some() {
+                let _ = context.cli.sender().send_message(channel_id.as_str(), format!("Cannot display poll results for poll name '{poll}' as it cannot be found!", poll = poll_name).as_str());
+                return true;
+            }
+
+            let poll = poll_option.unwrap();
+
             let proposals = find_proposals_by_poll(context.db_conn, &poll);
 
             let mut message = format!("Displaying poll results for {}:\n", poll_name);
 
             for proposal in proposals.iter() {
-                // TODO: remove unwrap
-                let item = find_item_by_proposal(context.db_conn, &proposal).unwrap();
-                let votes = find_votes_by_proposal(context.db_conn, &proposal);
+                let item_option = find_item_by_proposal(context.db_conn, &proposal);
 
-                message = format!("{}{}:", message, item.name);
+                if let Some(item) = item_option {
+                    let votes = find_votes_by_proposal(context.db_conn, &proposal);
 
-                for vote in votes.iter() {
-                    // TODO: remove unwrap
-                    let voter = find_voter_by_vote(context.db_conn, &vote).unwrap();
+                    message = format!("{}{}:", message, item.name);
 
-                    message = format!("{} {}({})", message, voter.name, vote.weight);
+                    for vote in votes.iter() {
+                        let voter_option = find_voter_by_vote(context.db_conn, &vote);
+
+                        if let Some(voter) = voter_option {
+                            message = format!("{} {}({})", message, voter.name, vote.weight);
+                        }
+                    }
+
+                    message = format!("{}\n", message);
                 }
-
-                message = format!("{}\n", message);
             }
 
             let _ = context.cli.sender().send_message(channel_id.as_str(), message.as_str());
