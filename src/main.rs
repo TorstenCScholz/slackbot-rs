@@ -2,6 +2,7 @@
 #[macro_use] extern crate diesel_codegen;
 extern crate slack;
 extern crate dotenv;
+extern crate rand;
 
 pub mod command;
 pub mod schema;
@@ -14,6 +15,8 @@ use slack::{Channel, Event, Message, RtmClient, User};
 
 use dotenv::dotenv;
 
+use rand::Rng;
+
 use std::env;
 use std::collections::{HashSet};
 
@@ -24,6 +27,27 @@ use self::models::*;
 const COMMAND_TOKEN: &'static str = "!";
 const NUM_LIST_POLLS: i64 = 5;
 const NUM_LIST_ITEMS: i64 = 5;
+
+static POSITIVE_COCKY_ANSWER_SUFFIXES: &'static [&str] = &[
+    "Sauber Roland!",
+    "Das ist ja schon etwas.",
+    "Einfach mal 80 fahren.",
+    "Einfach mal machen.",
+    "Nicht so viel drüber nachdenken."
+];
+
+static NEGATIVE_COCKY_ANSWER_SUFFIXES: &'static [&str] = &[
+    "Was will man machen?",
+    "¯\\_(ツ)_/¯",
+    "Da muss man erst noch ein paar Münzen einwerfen.",
+    "Da steckt man nicht drin.",
+    "Der Mensch ist des Menschen Wolf.",
+    "LANGFRISTIG wird das selbstverständlich funktionieren.",
+    "Ich nehm' das mal mit.",
+    "Ich lese das jetzt so, als ob ich hätte was machen müssen?",
+    "Junge, alles gut bei dir?",
+    "Das mach ich abends bei 'nem Bierchen."
+];
 
 #[allow(dead_code)]
 fn get_channel_id<'a>(cli: &'a RtmClient, channel_name: &str) -> Option<&'a Channel> {
@@ -141,10 +165,10 @@ impl <'a> slack::EventHandler for BasicHandler<'a> {
                     let enough_params = command_implementation.invoke(&mut context, command_parameters.iter().map(String::as_str).collect());
 
                     if !enough_params {
-                        let _ = cli.sender().send_message(channel_id.as_ref().unwrap().as_str(), format!("Not enough parameters for command '{}'.", command).as_str());
+                        let _ = cli.sender().send_message(channel_id.as_ref().unwrap().as_str(), get_cocky_answer(format!("Unzureichende Anzahl an Parametern für den Befehl '{}'.", command).as_str(), false).as_str());
                     }
                 } else {
-                    let _ = cli.sender().send_message(channel_id.as_ref().unwrap().as_str(), format!("Command '{}' not found.", command).as_str());
+                    let _ = cli.sender().send_message(channel_id.as_ref().unwrap().as_str(), get_cocky_answer(format!("Ich kenne den Befehl '{}' nicht.", command).as_str(), false).as_str());
                 }
             }
         }
@@ -626,6 +650,12 @@ fn update_vote(db_conn: &SqliteConnection, voter_id_param: i32, proposal_id_para
     true
 }
 
+fn get_cocky_answer(answer: &str, is_positive: bool) -> String {
+    let suffixes = if is_positive { POSITIVE_COCKY_ANSWER_SUFFIXES } else { NEGATIVE_COCKY_ANSWER_SUFFIXES };
+
+    format!("{} {}", answer, rand::thread_rng().choose(suffixes).unwrap_or(&"")).to_owned()
+}
+
 fn main() {
     dotenv().ok();
 
@@ -635,13 +665,13 @@ fn main() {
         }
 
         let poll_name = args[0];
-        let mut message_formatted = format!("Creating a new poll '{}'.", poll_name);
+        let mut message_formatted = get_cocky_answer(format!("Umfrage '{}' angelegt.", poll_name).as_str(), true);
 
         if let Some(channel_id) = context.channel.as_ref() {
             let created_poll = create_poll(&context.db_conn, poll_name, PollStatus::Stopped);
 
             if !created_poll {
-                message_formatted = format!("Poll name '{}' cannot be created!", poll_name);
+                message_formatted = get_cocky_answer(format!("Ich kann die Umfrage '{}' nicht anlegen!", poll_name).as_str(), false);
             }
 
             let message = message_formatted.as_str();
@@ -659,17 +689,17 @@ fn main() {
         }
 
         let poll_name = args[0];
-        let mut message_formatted = format!("Started poll '{}'.", poll_name);
+        let mut message_formatted = get_cocky_answer(format!("Umfrage '{}' gestartet.", poll_name).as_str(), true);
 
         if let Some(channel_id) = context.channel.as_ref() {
             if !find_poll_by_name(context.db_conn, poll_name).is_some() {
-                let _ = context.cli.sender().send_message(channel_id.as_str(), format!("No poll named '{}' can be found.", poll_name).as_str());
+                let _ = context.cli.sender().send_message(channel_id.as_str(), get_cocky_answer(format!("Ich kann keine Umfrage '{}' finden!", poll_name).as_str(), false).as_str());
             } else {
                 if can_start_poll(&context.db_conn, poll_name) {
                     let started_poll = start_poll(&context.db_conn, poll_name);
 
                     if !started_poll {
-                        message_formatted = format!("Poll name '{}' cannot be started!", poll_name);
+                        message_formatted = get_cocky_answer(format!("Ich kann die Umfrage '{}' nicht starten!", poll_name).as_str(), false);
                     }
 
                     let message = message_formatted.as_str();
@@ -677,7 +707,7 @@ fn main() {
 
                     let _ = context.cli.sender().send_message(channel_id.as_str(), message);
                 } else {
-                    let _ = context.cli.sender().send_message(channel_id.as_str(), "Cannot start a poll that has already been started once.");
+                    let _ = context.cli.sender().send_message(channel_id.as_str(), get_cocky_answer("Ich kann keine Umfrage erneut starten, sofern sie schon einmal gestartet worden ist.", false).as_str());
                 }
             }
         }
@@ -691,14 +721,14 @@ fn main() {
         }
 
         let poll_name = args[0];
-        let mut message_formatted = format!("Concluded poll '{}'.", poll_name);
+        let mut message_formatted = get_cocky_answer(format!("Umfrage beendet '{}'.", poll_name).as_str(), true);
 
         if let Some(channel_id) = context.channel.as_ref() {
             if can_conclude_poll(&context.db_conn, poll_name) {
                 let concluded_poll = conclude_poll(&context.db_conn, poll_name);
 
                 if !concluded_poll {
-                    message_formatted = format!("Poll name '{}' cannot be concluded!", poll_name);
+                    message_formatted = get_cocky_answer(format!("Ich kann die Umfrage '{}' nicht beenden!", poll_name).as_str(), false);
                 }
 
                 let message = message_formatted.as_str();
@@ -706,7 +736,7 @@ fn main() {
 
                 let _ = context.cli.sender().send_message(channel_id.as_str(), message);
             } else {
-                let _ = context.cli.sender().send_message(channel_id.as_str(), format!("Cannot conclude poll named '{}' because it does not exist or has already been concluded.", poll_name).as_str());
+                let _ = context.cli.sender().send_message(channel_id.as_str(), get_cocky_answer(format!("Ich kann die Umfrage '{}' nicht beenden, weil sie entweder nicht existiert oder bereits beendet worden ist.", poll_name).as_str(), false).as_str());
             }
         }
 
@@ -720,7 +750,7 @@ fn main() {
 
             println!("Displaying {} polls", results.len());
 
-            let mut message = format!("Displaying latest polls:\n");
+            let mut message = format!("Die letzten {} Umfragen:\n", results.len());
 
             for (num, poll) in results.iter().enumerate() {
                 message = format!("{}{}. {} ({})\n", message, (num + 1), poll.name, poll.status);
@@ -739,7 +769,7 @@ fn main() {
 
             println!("Displaying {} items", results.len());
 
-            let mut message = format!("Displaying latest items:\n");
+            let mut message = format!("Die letzten {} Orte:\n", results.len());
 
             for (num, item) in results.iter().enumerate() {
                 message = format!("{}{}. {}\n", message, (num + 1), item.name);
@@ -762,13 +792,13 @@ fn main() {
         let user_name = user.name.as_ref().unwrap();
         let user_id = user.id.as_ref().unwrap();
 
-        let mut message_formatted = format!("Creating a new voter '{}' ({}).", user_name, user_id);
+        let mut message_formatted = get_cocky_answer(format!("Neuer Wähler '{}' angelegt ({}).", user_name, user_id).as_str(), true);
 
         if let Some(channel_id) = context.channel.as_ref() {
             let created_voter = create_voter(&context.db_conn, user_id, user_name);
 
             if !created_voter {
-                message_formatted = format!("User id '{id}' ('{name}') already registered!", id = user_id, name = user_name);
+                message_formatted = get_cocky_answer(format!("Wähler '{id}' ('{name}') ist bereits registriert!", id = user_id, name = user_name).as_str(), false);
             }
 
             let message = message_formatted.as_str();
@@ -786,13 +816,13 @@ fn main() {
         }
 
         let item_name = args[0];
-        let mut message_formatted = format!("Creating a new item '{}'.", item_name);
+        let mut message_formatted = get_cocky_answer(format!("Ort '{}' angelegt.", item_name).as_str(), true);
 
         if let Some(channel_id) = context.channel.as_ref() {
             let created_item = create_item(&context.db_conn, item_name);
 
             if !created_item {
-                message_formatted = format!("Item name '{}' already taken!", item_name);
+                message_formatted = get_cocky_answer(format!("Ort '{}' gibt es bereits!", item_name).as_str(), false);
             }
 
             let message = message_formatted.as_str();
@@ -811,19 +841,19 @@ fn main() {
 
         let poll_name = args[0];
         let item_name = args[1];
-        let mut message_formatted = format!("Creating a new proposal for '{}' at '{}'.", poll_name, item_name);
+        let mut message_formatted = get_cocky_answer(format!("Vorschlag '{}' bei '{}' angelegt.", poll_name, item_name).as_str(), true);
 
         if let Some(channel_id) = context.channel.as_ref() {
             let poll_option = find_poll_by_name(context.db_conn, poll_name);
             let item_option = find_item_by_name(context.db_conn, item_name);
 
             if poll_option.is_none() {
-                let _ = context.cli.sender().send_message(channel_id.as_str(), format!("Cannot create proposal as poll name '{}' cannot be found!", poll_name).as_str());
+                let _ = context.cli.sender().send_message(channel_id.as_str(), get_cocky_answer(format!("Ich kann keine Umfrage namens '{}' finden!", poll_name).as_str(), false).as_str());
                 return true;
             }
 
             if item_option.is_none() {
-                let _ = context.cli.sender().send_message(channel_id.as_str(), format!("Cannot create proposal as item name '{}' cannot be found!", item_name).as_str());
+                let _ = context.cli.sender().send_message(channel_id.as_str(), get_cocky_answer(format!("Ich kann keinen Ort namens '{}' finden!", item_name).as_str(), false).as_str());
                 return true;
             }
 
@@ -833,7 +863,7 @@ fn main() {
             let created_proposal = create_proposal(&context.db_conn, &poll, &item);
 
             if !created_proposal {
-                message_formatted = format!("Duplicate proposal found for '{}' at '{}'!", poll.name, item.name);
+                message_formatted = get_cocky_answer(format!("Der Vorschlag für '{}' bei '{}' existiert bereits!", poll.name, item.name).as_str(), false);
             }
 
             let message = message_formatted.as_str();
@@ -858,14 +888,14 @@ fn main() {
             "-" => -1,
             _ => 1
         };
-        let mut message_formatted = format!("Accepting vote for '{}' at '{}' with weight {}.", poll_name, item_name, weight);
+        let mut message_formatted = get_cocky_answer(format!("Stimme gezählt für '{}' bei '{}' mit Gewichtung {}.", poll_name, item_name, weight).as_str(), true);
 
         if let Some(channel_id) = context.channel.as_ref() {
             let poll_option = find_poll_by_name(context.db_conn, poll_name);
             let item_option = find_item_by_name(context.db_conn, item_name);
 
             if !poll_option.is_some() || !item_option.is_some() {
-                let _ = context.cli.sender().send_message(channel_id.as_str(), format!("Ich kann die Umfrage '{poll}' oder den Ort '{item}' nicht finden! ¯\\_(ツ)_/¯", poll = poll_name, item = item_name).as_str());
+                let _ = context.cli.sender().send_message(channel_id.as_str(), get_cocky_answer(format!("Ich kann die Umfrage '{poll}' oder den Ort '{item}' nicht finden!", poll = poll_name, item = item_name).as_str(), false).as_str());
                 return true;
             }
 
@@ -879,7 +909,7 @@ fn main() {
                 proposal_option = find_proposal_by_poll_name_and_item_name(context.db_conn, poll_name, item_name);
 
                 if !created_proposal {
-                    let _ = context.cli.sender().send_message(channel_id.as_str(), format!("Ich kann für die Umfrage '{poll}' mit Ort '{item}' keinen Vorschlag anlegen! Was will man machen?", poll = poll_name, item = item_name).as_str());
+                    let _ = context.cli.sender().send_message(channel_id.as_str(), get_cocky_answer(format!("Ich kann für die Umfrage '{poll}' mit Ort '{item}' keinen Vorschlag anlegen!", poll = poll_name, item = item_name).as_str(), false).as_str());
                     return true;
                 }
             }
@@ -890,7 +920,7 @@ fn main() {
 
             if !voter_option.is_some() {
                 let voter_name = context.user.as_ref().unwrap().name.as_ref().unwrap();
-                let _ = context.cli.sender().send_message(channel_id.as_str(), format!("Cannot cast vote by '{name}' as they are not registred, yet!", name = voter_name).as_str());
+                let _ = context.cli.sender().send_message(channel_id.as_str(), get_cocky_answer(format!("Ich kenne keinen Wähler '{name}'. Die Stimme ist nicht gezählt worden.", name = voter_name).as_str(), false).as_str());
                 return true;
             }
 
@@ -905,7 +935,7 @@ fn main() {
             };
 
             if !set_vote {
-                message_formatted = format!("Cannot create / update vote for poll name '{poll}' at item name '{item}'!", poll = poll_name, item = item_name);
+                message_formatted = get_cocky_answer(format!("Ich kann die Stimme für '{poll}' bei '{item}' nicht akzeptieren!", poll = poll_name, item = item_name).as_str(), false);
             }
 
             let message = message_formatted.as_str();
@@ -929,7 +959,7 @@ fn main() {
             let poll_option = find_poll_by_name(context.db_conn, poll_name);
 
             if !poll_option.is_some() {
-                let _ = context.cli.sender().send_message(channel_id.as_str(), format!("Cannot display poll results for poll name '{poll}' as it cannot be found!", poll = poll_name).as_str());
+                let _ = context.cli.sender().send_message(channel_id.as_str(), get_cocky_answer(format!("Ich kann keine Umfrageergebnisse für '{poll}' anzeigen, weil es die Umfrage nicht gibt!", poll = poll_name).as_str(), false).as_str());
                 return true;
             }
 
@@ -937,7 +967,7 @@ fn main() {
 
             let proposals = find_proposals_by_poll(context.db_conn, &poll);
 
-            let mut message = format!("Displaying poll results for {}:\n", poll_name);
+            let mut message = format!("Hier die Umfrageergebnisse für {}:\n", poll_name);
 
             for proposal in proposals.iter() {
                 let item_option = find_item_by_proposal(context.db_conn, &proposal);
@@ -968,7 +998,7 @@ fn main() {
     #[allow(unused_variables)]
     let help = |context: &mut Context, args: Vec<&str>| -> bool {
         if let Some(channel_id) = context.channel.as_ref() {
-            let _ = context.cli.sender().send_message(channel_id.as_str(), "I cannot help you right now :confused:. Maybe try a real person?");
+            let _ = context.cli.sender().send_message(channel_id.as_str(), get_cocky_answer("Ich kann dir jetzt gerade nicht helfen :confused:. Frag' doch einfach eine kompetente Person?", false).as_str());
         }
 
         true
