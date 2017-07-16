@@ -861,13 +861,32 @@ fn main() {
         let mut message_formatted = format!("Accepting vote for '{}' at '{}' with weight {}.", poll_name, item_name, weight);
 
         if let Some(channel_id) = context.channel.as_ref() {
-            let proposal_option = find_proposal_by_poll_name_and_item_name(context.db_conn, poll_name, item_name);
-            let voter_option = find_voter_by_slack_id(context.db_conn, context.user.as_ref().unwrap().id.as_ref().unwrap());
+            let poll_option = find_poll_by_name(context.db_conn, poll_name);
+            let item_option = find_item_by_name(context.db_conn, item_name);
 
-            if !proposal_option.is_some() {
-                let _ = context.cli.sender().send_message(channel_id.as_str(), format!("Cannot cast vote for poll name '{poll}' at '{item}' as they cannot be found!", poll = poll_name, item = item_name).as_str());
+            if !poll_option.is_some() || !item_option.is_some() {
+                let _ = context.cli.sender().send_message(channel_id.as_str(), format!("Ich kann die Umfrage '{poll}' oder den Ort '{item}' nicht finden! ¯\\_(ツ)_/¯", poll = poll_name, item = item_name).as_str());
                 return true;
             }
+
+            let poll = poll_option.unwrap();
+            let item = item_option.unwrap();
+
+            let mut proposal_option = find_proposal_by_poll_name_and_item_name(context.db_conn, poll_name, item_name);
+
+            if !proposal_option.is_some() {
+                let created_proposal = create_proposal(context.db_conn, &poll, &item);
+                proposal_option = find_proposal_by_poll_name_and_item_name(context.db_conn, poll_name, item_name);
+
+                if !created_proposal {
+                    let _ = context.cli.sender().send_message(channel_id.as_str(), format!("Ich kann für die Umfrage '{poll}' mit Ort '{item}' keinen Vorschlag anlegen! Was will man machen?", poll = poll_name, item = item_name).as_str());
+                    return true;
+                }
+            }
+
+            let proposal = proposal_option.unwrap();
+
+            let voter_option = find_voter_by_slack_id(context.db_conn, context.user.as_ref().unwrap().id.as_ref().unwrap());
 
             if !voter_option.is_some() {
                 let voter_name = context.user.as_ref().unwrap().name.as_ref().unwrap();
@@ -875,7 +894,6 @@ fn main() {
                 return true;
             }
 
-            let proposal = proposal_option.unwrap();
             let voter = voter_option.unwrap();
 
             let vote_exists = exists_vote(context.db_conn, proposal.id, voter.id);
